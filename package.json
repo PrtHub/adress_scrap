@@ -1,0 +1,14 @@
+{
+  "name": "solana-traders-scraper",
+  "version": "1.0.0",
+  "description": "Scraper to collect top trader addresses for Solana meme coins",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "csv-writer": "^1.6.0",
+    "puppeteer": "^21.0.0"
+  }
+}
