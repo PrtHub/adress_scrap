@@ -4,11 +4,13 @@
   "description": "Scraper to collect top trader addresses for Solana meme coins",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "node main.js"
   },
   "dependencies": {
     "axios": "^1.7.9",
+    "cheerio": "^1.0.0",
     "csv-writer": "^1.6.0",
-    "puppeteer": "^21.0.0"
+    "puppeteer": "^21.11.0"
   }
 }
