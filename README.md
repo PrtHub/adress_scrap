@@ -1,6 +1,20 @@
 # Solana Meme Coin Traders Scraper
 
-This project scrapes the top trader wallet addresses for the top 20 meme coins on Solana using DexScreener data.
+This project scrapes the top trader wallet addresses for Solana meme coins using DexScreener data. It uses puppeteer-real-browser with proxy support to bypass Cloudflare protection.
+
+## Features
+
+- Automatic Cloudflare protection bypass using puppeteer-real-browser
+- Proxy support for reliable scraping
+- Real browser fingerprinting to avoid detection
+- Automatic Turnstile challenge solving
+- CSV export of trader addresses
+
+## Prerequisites
+
+1. Node.js (v16 or higher)
+2. A proxy service subscription (recommended providers below)
+3. Git (for cloning the repository)
 
 ## Setup
 
@@ -11,17 +25,29 @@ This project scrapes the top trader wallet addresses for the top 20 meme coins o
 npm install
 ```
 
+4. Configure your proxy in `main.js`:
+```javascript
+const PROXY_CONFIG = {
+    host: 'your-proxy-host',
+    port: 'your-proxy-port',
+    username: 'your-username',
+    password: 'your-password'
+};
+```
+
 ## Running the Scraper
 
 ```bash
-npm start
+npm run dev
 ```
 
 The script will:
-1. Launch a browser and navigate to DexScreener's Solana page
-2. Get the top 20 trending meme coins
-3. For each coin, collect the top 100 trader wallet addresses
-4. Save all data to `trader_addresses.csv`
+1. Launch a real browser instance with proxy configuration
+2. Bypass Cloudflare protection automatically
+3. Navigate to DexScreener's Solana page
+4. Get the trending meme coins
+5. For each coin, collect trader wallet addresses
+6. Save all data to `trader_addresses.csv`
 
 ## Output
 
@@ -31,10 +57,11 @@ The script generates a CSV file with the following columns:
 
 ## Performance Notes
 
-- The script uses Puppeteer in non-headless mode to handle dynamic content
-- Includes delay mechanisms to prevent rate limiting
-- Implements error handling and graceful browser closure
-- Expected runtime: ~10-15 minutes for 20 coins (depending on network conditions)
+- Uses real browser profiles to avoid detection
+- Implements random delays between actions
+- Includes retry mechanism for failed attempts
+- Handles Cloudflare challenges automatically
+- Expected runtime varies based on Cloudflare challenges and network conditions
 
 ## Memory Usage
 
@@ -42,3 +69,17 @@ The script maintains a minimal memory footprint by:
 - Processing one coin at a time
 - Writing to CSV incrementally
 - Cleaning up browser resources properly
+- Managing memory usage during long runs
+
+## Troubleshooting
+
+If you encounter issues:
+1. Verify your proxy configuration is correct
+2. Ensure you're using a residential proxy (datacenter IPs often get blocked)
+3. Try increasing the delay times between requests
+4. Check if your proxy provider has specific configuration requirements
+
+## Dependencies
+
+- puppeteer-real-browser: For browser automation and Cloudflare bypass
+- csv-writer: For saving data to CSV format

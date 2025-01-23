@@ -1,5 +1,12 @@
-const puppeteer = require('puppeteer');
+const { connect } = require('puppeteer-real-browser');
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
+
+const PROXY_CONFIG = {
+    host: 'proxy.nodemaven.com',  
+    port: '8080',                 
+    username: 'your-username',    
+    password: 'your-password'     
+};
 
 const csvWriter = createCsvWriter({
     path: 'trader_addresses.csv',
@@ -9,140 +16,204 @@ const csvWriter = createCsvWriter({
     ]
 });
 
-async function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+async function delay(min, max) {
+    const time = Math.floor(Math.random() * (max - min + 1) + min);
+    return new Promise(resolve => setTimeout(resolve, time));
+}
+
+async function setupBrowser() {
+    console.log('Launching browser with real browser profile and proxy...');
+
+    const { browser, page } = await connect({
+        headless: false,
+        fingerprint: true,   
+        turnstile: true,      
+        tf: true,             
+        proxy: {              
+            host: PROXY_CONFIG.host,
+            port: PROXY_CONFIG.port,
+            username: PROXY_CONFIG.username,
+            password: PROXY_CONFIG.password
+        },
+        args: [
+            '--start-maximized',
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-infobars',
+            '--window-position=0,0',
+            '--ignore-certifcate-errors',
+            '--ignore-certifcate-errors-spki-list',
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-site-isolation-trials',
+            '--disable-features=site-per-process',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+            '--hide-scrollbars',
+            '--mute-audio'
+        ],
+        customConfig: {
+            windowSize: '1920,1080'
+        },
+        connectOption: {
+            defaultViewport: null
+        }
+    });
+
+    return { page, browser };
 }
 
 async function getTopMemeCoins(page) {
     try {
-        // Step 1: Access Dexscreener's trending meme coins page
+        console.log('Navigating to DexScreener...');
+        await delay(2000, 5000);
+        
         await page.goto('https://dexscreener.com/solana', {
-            waitUntil: 'networkidle0'
+            waitUntil: 'networkidle0',
+            timeout: 60000
         });
+        
+        // Wait for the table to load
+        await page.waitForSelector('table', { timeout: 30000 });
+        await delay(3000, 7000);
 
-        // Wait for the search input and type "meme"
-        await page.waitForSelector('input[type="text"]');
-        await page.type('input[type="text"]', 'meme');
-        await delay(2000); // Wait for search results
-
-        // Get the top 20 meme coins
+        console.log('Extracting coin data...');
         const coins = await page.evaluate(() => {
-            const rows = Array.from(document.querySelectorAll('tr')).slice(1, 21); // Skip header, get top 20
-            return rows.map(row => {
-                const symbolElement = row.querySelector('td:nth-child(2)');
-                const linkElement = row.querySelector('td:nth-child(2) a');
-                if (symbolElement && linkElement) {
-                    return {
-                        symbol: symbolElement.textContent.trim(),
-                        url: linkElement.href
-                    };
+            const rows = document.querySelectorAll('table tbody tr');
+            const coinList = [];
+            
+            rows.forEach(row => {
+                try {
+                    const nameElement = row.querySelector('td:first-child a');
+                    if (nameElement) {
+                        const href = nameElement.getAttribute('href');
+                        if (href) {
+                            coinList.push({
+                                name: nameElement.textContent.trim(),
+                                url: href
+                            });
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error processing row:', e);
                 }
-                return null;
-            }).filter(Boolean);
+            });
+            
+            return coinList;
         });
 
+        console.log(`Found ${coins.length} coins`);
         return coins;
     } catch (error) {
-        console.error('Error fetching top meme coins:', error.message);
+        console.error('Error in getTopMemeCoins:', error);
         return [];
     }
 }
 
 async function getTraderAddresses(page, coin) {
     try {
-        // Step 2: Access the coin's page
-        await page.goto(coin.url, {
-            waitUntil: 'networkidle0'
+        console.log(`Getting addresses for ${coin.name}...`);
+        await delay(2000, 5000);
+        
+        const coinUrl = coin.url.startsWith('http') ? coin.url : `https://dexscreener.com${coin.url}`;
+        await page.goto(coinUrl, {
+            waitUntil: 'networkidle0',
+            timeout: 60000
         });
 
-        // Wait for and click the "Top Traders" tab
-        await page.waitForSelector('button:has-text("Top Traders")', { timeout: 5000 });
-        await page.click('button:has-text("Top Traders")');
-        await delay(2000); // Wait for data to load
+        try {
+            await page.waitForSelector('button:has-text("Trades")', { timeout: 10000 });
+            await delay(1000, 3000);
+            await page.click('button:has-text("Trades")');
+            await delay(3000, 7000);
+        } catch (e) {
+            console.log('Trades tab not found, continuing...');
+        }
 
-        // Extract trader addresses from Solscan links
-        const traders = await page.evaluate(() => {
-            const addresses = new Set();
-            const links = document.querySelectorAll('a[href*="solscan.io/account/"]');
-            links.forEach(link => {
-                const address = link.href.split('/account/').pop();
-                if (address && address.length > 30) {
-                    addresses.add(address);
+        const addresses = await page.evaluate(() => {
+            const addressSet = new Set();
+            
+            document.querySelectorAll('a[href*="solscan.io/account/"]').forEach(link => {
+                const address = link.href.split('/account/')[1];
+                if (address && address.match(/^[A-HJ-NP-Za-km-z1-9]{32,44}$/)) {
+                    addressSet.add(address);
                 }
             });
-            return Array.from(addresses);
+
+            document.querySelectorAll('td').forEach(cell => {
+                const text = cell.textContent.trim();
+                if (text.match(/^[A-HJ-NP-Za-km-z1-9]{32,44}$/)) {
+                    addressSet.add(text);
+                }
+            });
+
+            return Array.from(addressSet);
         });
 
-        return traders.map(address => ({
-            coin: coin.symbol,
-            address: address
-        }));
+        console.log(`Found ${addresses.length} addresses for ${coin.name}`);
+        return addresses;
     } catch (error) {
-        console.error(`Error fetching traders for ${coin.symbol}:`, error.message);
+        console.error(`Error getting addresses for ${coin.name}:`, error);
         return [];
     }
 }
 
 async function main() {
     let browser;
-    try {
-        console.log('Launching browser...');
-        browser = await puppeteer.launch({
-            headless: false, // Set to true in production
-            defaultViewport: { width: 1366, height: 768 }
-        });
-        const page = await browser.newPage();
+    let retryCount = 0;
+    const maxRetries = 3;
 
-        // Set user agent
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x32) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    while (retryCount < maxRetries) {
+        try {
+            const { page, browser: newBrowser } = await setupBrowser();
+            browser = newBrowser;
 
-        console.log('Fetching top meme coins from DexScreener...');
-        const coins = await getTopMemeCoins(page);
-        
-        if (coins.length === 0) {
-            throw new Error('No meme coins found');
-        }
+            const coins = await getTopMemeCoins(page);
+            if (coins.length === 0) {
+                throw new Error('No coins found. Retrying...');
+            }
 
-        console.log(`Found ${coins.length} meme coins`);
-        console.log('Top meme coins:');
-        coins.forEach((coin, i) => {
-            console.log(`${i + 1}. ${coin.symbol}`);
-        });
-
-        const traderData = [];
-        const processedAddresses = new Set();
-
-        for (let i = 0; i < coins.length; i++) {
-            const coin = coins[i];
-            console.log(`\nProcessing ${i + 1}/${coins.length}: ${coin.symbol}`);
-
-            const traders = await getTraderAddresses(page, coin);
+            const processedAddresses = new Set();
             
-            traders.forEach(item => {
-                if (!processedAddresses.has(item.address)) {
-                    traderData.push(item);
-                    processedAddresses.add(item.address);
+            for (const coin of coins) {
+                const addresses = await getTraderAddresses(page, coin);
+                
+                if (addresses.length > 0) {
+                    const newAddresses = addresses.filter(addr => !processedAddresses.has(addr));
+                    newAddresses.forEach(addr => processedAddresses.add(addr));
+                    
+                    await csvWriter.writeRecords(newAddresses.map(address => ({
+                        coin: coin.name,
+                        address: address
+                    })));
+                    
+                    console.log(`Saved ${newAddresses.length} new addresses for ${coin.name}`);
                 }
-            });
+                
+                console.log(`Total unique addresses: ${processedAddresses.size}`);
+                await delay(10000, 15000);
+            }
 
-            console.log(`Found ${traders.length} traders for ${coin.symbol}`);
-            console.log(`Total unique addresses so far: ${processedAddresses.size}`);
-            
-            // Add delay between requests to avoid rate limiting
-            await delay(3000);
+            console.log(`Scraping completed. Total unique addresses found: ${processedAddresses.size}`);
+            break;
+        } catch (error) {
+            console.error(`Attempt ${retryCount + 1} failed:`, error);
+            if (browser) {
+                await browser.close();
+            }
+            retryCount++;
+            if (retryCount < maxRetries) {
+                console.log(`Retrying... (${retryCount + 1}/${maxRetries})`);
+                await delay(10000, 20000);
+            }
         }
+    }
 
-        // Write to CSV
-        await csvWriter.writeRecords(traderData);
-        console.log('\nData has been written to trader_addresses.csv');
-        console.log(`Total unique trading addresses found: ${traderData.length}`);
-
-    } catch (error) {
-        console.error('Error occurred:', error);
-    } finally {
-        if (browser) {
-            await browser.close();
-        }
+    if (browser) {
+        await browser.close();
     }
 }
 
